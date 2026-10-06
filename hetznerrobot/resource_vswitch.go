@@ -42,6 +42,32 @@ func flattenVSwitchCloudNetworks(networks []HetznerRobotVSwitchCloudNetwork) []m
 	return out
 }
 
+// The resource servers attribute is a configurable TypeList, so retain its
+// existing order. Newly discovered members are appended in server-number order.
+func flattenVSwitchResourceServers(servers []HetznerRobotVSwitchServer, previous []interface{}) []map[string]interface{} {
+	sorted := flattenVSwitchServers(servers)
+	byNumber := make(map[int]map[string]interface{}, len(sorted))
+	for _, server := range sorted {
+		byNumber[server["server_number"].(int)] = server
+	}
+	out := make([]map[string]interface{}, 0, len(sorted))
+	for _, value := range previous {
+		number := value.(map[string]interface{})["server_number"].(int)
+		if server, ok := byNumber[number]; ok {
+			out = append(out, server)
+			delete(byNumber, number)
+		}
+	}
+	for _, server := range sorted {
+		number := server["server_number"].(int)
+		if _, ok := byNumber[number]; ok {
+			out = append(out, server)
+			delete(byNumber, number)
+		}
+	}
+	return out
+}
+
 func resourceVSwitch() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceVSwitchCreate,
@@ -156,7 +182,7 @@ func resourceVSwitchImportState(ctx context.Context, d *schema.ResourceData, met
 	d.Set("name", vSwitch.Name)
 	d.Set("vlan", vSwitch.Vlan)
 	d.Set("is_cancelled", vSwitch.Cancelled)
-	d.Set("servers", flattenVSwitchServers(vSwitch.Server))
+	d.Set("servers", flattenVSwitchResourceServers(vSwitch.Server, d.Get("servers").([]interface{})))
 	d.Set("subnets", flattenVSwitchSubnets(vSwitch.Subnet))
 	d.Set("cloud_networks", flattenVSwitchCloudNetworks(vSwitch.CloudNetwork))
 
@@ -176,7 +202,7 @@ func resourceVSwitchCreate(ctx context.Context, d *schema.ResourceData, meta int
 	}
 
 	d.Set("is_cancelled", vSwitch.Cancelled)
-	d.Set("servers", flattenVSwitchServers(vSwitch.Server))
+	d.Set("servers", flattenVSwitchResourceServers(vSwitch.Server, d.Get("servers").([]interface{})))
 	d.Set("subnets", flattenVSwitchSubnets(vSwitch.Subnet))
 	d.Set("cloud_networks", flattenVSwitchCloudNetworks(vSwitch.CloudNetwork))
 	d.SetId(strconv.Itoa(vSwitch.ID))
@@ -199,7 +225,7 @@ func resourceVSwitchRead(ctx context.Context, d *schema.ResourceData, meta inter
 	d.Set("name", vSwitch.Name)
 	d.Set("vlan", vSwitch.Vlan)
 	d.Set("is_cancelled", vSwitch.Cancelled)
-	d.Set("servers", flattenVSwitchServers(vSwitch.Server))
+	d.Set("servers", flattenVSwitchResourceServers(vSwitch.Server, d.Get("servers").([]interface{})))
 	d.Set("subnets", flattenVSwitchSubnets(vSwitch.Subnet))
 	d.Set("cloud_networks", flattenVSwitchCloudNetworks(vSwitch.CloudNetwork))
 
