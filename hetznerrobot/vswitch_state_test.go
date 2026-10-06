@@ -86,3 +86,35 @@ func TestVSwitchState(t *testing.T) {
 		}
 	}
 }
+
+func TestVSwitchReadPreservesConfiguredServerOrder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(HetznerRobotVSwitch{
+			ID: 42, Name: "test-switch", Vlan: 4000,
+			Server: []HetznerRobotVSwitchServer{{ServerNumber: 100}, {ServerNumber: 300}, {ServerNumber: 200}},
+		})
+	}))
+	defer server.Close()
+	d := schema.TestResourceDataRaw(t, resourceVSwitch().Schema, map[string]interface{}{
+		"name": "test-switch", "vlan": 4000,
+		"servers": []interface{}{
+			map[string]interface{}{"server_number": 200},
+			map[string]interface{}{"server_number": 100},
+		},
+	})
+	d.SetId("42")
+	client := NewHetznerRobotClient("", "", server.URL)
+	for i := 0; i < 2; i++ {
+		if diags := resourceVSwitchRead(context.Background(), d, client); diags.HasError() {
+			t.Fatal(diags)
+		}
+		servers := d.Get("servers").([]interface{})
+		got := make([]int, len(servers))
+		for i, server := range servers {
+			got[i] = server.(map[string]interface{})["server_number"].(int)
+		}
+		if want := []int{200, 100, 300}; !reflect.DeepEqual(got, want) {
+			t.Errorf("refresh server order = %v, want %v", got, want)
+		}
+	}
+}
